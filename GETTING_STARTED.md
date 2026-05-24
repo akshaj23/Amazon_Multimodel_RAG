@@ -1,374 +1,149 @@
-# Getting Started with CLIP + RAG System
+# Getting Started
 
-## What You Have
+## What This Project Does
 
-A fully functional **multimodal e-commerce chatbot** that uses:
+This project is a multimodal Amazon product assistant. It retrieves products with CLIP embeddings and ChromaDB, then uses Llama 3.1 through Ollama to answer questions from the retrieved product context.
 
-- **CLIP** (OpenAI's Contrastive Language-Image Pre-training)
-  - Generates 512-dimensional embeddings
-  - Aligns text and images in shared space
-  - No training needed - uses pre-trained model
+The app supports:
 
-- **RAG** (Retrieval-Augmented Generation)
-  - Vector database for fast similarity search
-  - Retrieves relevant products based on queries
-  - Supports text, image, and multimodal searches
+- Text product search
+- Image-based product search
+- Combined image + question workflows
+- RAG answers grounded in retrieved product metadata
 
-- **Streamlit UI**
-  - Interactive web interface
-  - Real-time search results
-  - Similarity score visualization
+## Requirements
 
-## 🚀 Quick Start (5 minutes)
+- Python 3.9+
+- Ollama
+- Llama 3.1 model pulled locally
+- Amazon Product Dataset 2020 data file
 
-### 1. Install Dependencies
+## Setup
+
+Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Generate Sample Data
-```bash
-python data/sample_products.py
-```
-Creates 10 sample products (smartphones, cameras, fitness trackers, etc.)
+Start Ollama:
 
-### 3. Build Embeddings
 ```bash
-python build_embeddings.py --generate-sample --output vector_store.json
+ollama pull llama3.1
+ollama serve
 ```
-Generates CLIP embeddings for all products (~2-3 minutes)
 
-### 4. Run the App
+Build embeddings:
+
+```bash
+python build_embeddings.py --data data/processed/amazon_products_2020.json --store chroma
+```
+
+Run the app:
+
 ```bash
 streamlit run ui/streamlit_app.py
 ```
 
-Visit `http://localhost:8501` 🎉
+Open `http://localhost:8501`.
 
-## How It Works
+## Data
 
-### Text Search
-```
-User Query: "What smartphones have good cameras?"
-    ↓
-CLIP Text Encoder
-    ↓
-512D Embedding
-    ↓
-Vector Search (find nearest products)
-    ↓
-Return Top 5 Results with Similarity Scores
-    ↓
-Display in UI
+The intended dataset is:
+
+```text
+https://www.kaggle.com/datasets/promptcloud/amazon-product-dataset-2020
 ```
 
-### Image Search
-```
-User Uploads Image
-    ↓
-CLIP Image Encoder
-    ↓
-512D Embedding
-    ↓
-Vector Search
-    ↓
-Display Similar Products
+Raw and processed dataset files are intentionally ignored by Git:
+
+```text
+data/raw/
+data/processed/
+chroma_db/
 ```
 
-### Multimodal Search
-```
-Text + Image Inputs
-    ↓
-Generate Both Embeddings
-    ↓
-Weighted Combination (configurable)
-    ↓
-Vector Search
-    ↓
-Display Results
-```
+This keeps the repository lightweight and avoids committing large generated data.
 
-## Usage Examples
+## System Flow
 
-### Try These Searches
-
-**Text queries:**
-- "smartphone with 5G and great camera"
-- "fitness tracker for health monitoring"
-- "professional camera for photography"
-- "portable wireless speaker"
-- "laptop for work and gaming"
-
-**Image uploads:**
-- Any smartphone image → finds similar phones
-- Any camera image → finds similar cameras
-- Any product image → finds similar products
-
-**Combined:**
-- Upload image + "I want something cheaper"
-- Upload image + "Show me newer models"
-
-## Project Files
-
-### Core Implementation
-- `data/sample_products.py` - Sample product dataset
-- `data/preprocessing.py` - Data cleaning and preparation
-- `data/data_loader.py` - Load and manage products
-- `models/clip_embeddings.py` - CLIP embedding generation
-- `models/llm_integration.py` - LLM interface (for future use)
-- `rag/vector_store.py` - Vector database (512D)
-- `rag/retrieval.py` - Product retrieval system
-- `ui/streamlit_app.py` - Web interface
-- `evaluation/metrics.py` - Performance metrics
-
-### Build & Test
-- `build_embeddings.py` - Generate embeddings from products
-- `test_clip_rag.py` - Automated test suite
-- `example_usage.py` - Usage examples
-
-### Configuration
-- `config.py` - All settings
-- `.env.example` - Environment variables
-- `requirements.txt` - Dependencies
-
-### Documentation
-- `README.md` - Full project overview
-- `QUICKSTART.md` - 5-minute quick start
-- `IMPLEMENTATION.md` - Detailed guide
-- `PROJECT_STRUCTURE.md` - Architecture
-- `GETTING_STARTED.md` - This file
-
-## Key Capabilities
-
-✅ **Text Search**
-- Query products by description
-- Semantic understanding (not keyword matching)
-- Fast retrieval from database
-
-✅ **Image Search**
-- Upload any product image
-- CLIP extracts visual features
-- Finds visually similar products
-
-✅ **Multimodal Search**
-- Combine text and image
-- Adjustable text/image weights
-- Best of both worlds
-
-✅ **Product Details**
-- Title, brand, price
-- Features and descriptions
-- Similarity scores
-
-✅ **Real-time Performance**
-- Instant search results
-- Similarity scores (0-100%)
-- No latency issues
-
-## Architecture
-
-```
-┌─────────────────┐
-│  User Input     │
-│ (Text/Image)    │
-└────────┬────────┘
-         │
-    ┌────▼─────┐
-    │   CLIP   │ ← OpenAI's Vision-Language Model
-    │  Model   │   (Pre-trained, 512D embeddings)
-    └────┬─────┘
-         │
-    ┌────▼──────────┐
-    │ Embedding     │
-    │ (512D vector) │
-    └────┬──────────┘
-         │
-    ┌────▼────────────┐
-    │ Vector Search   │ ← Cosine Similarity
-    │ (VectorStore)   │
-    └────┬────────────┘
-         │
-    ┌────▼──────────┐
-    │  Top K        │
-    │  Results      │
-    └────┬──────────┘
-         │
-    ┌────▼─────────┐
-    │  Streamlit   │
-    │  Display     │
-    └──────────────┘
+```text
+Amazon product metadata
+        |
+        v
+Preprocessing and combined product descriptions
+        |
+        v
+CLIP text embeddings
+        |
+        v
+ChromaDB persistent vector store
+        |
+        v
+Text, image, or combined user query
+        |
+        v
+CLIP query embedding and retrieval
+        |
+        v
+Retrieved product context
+        |
+        v
+Llama 3.1 RAG answer
 ```
 
-## Performance
+## Query Modes
 
-- **Search latency**: <100ms (after CLIP encoding)
-- **CLIP encoding**: 1-2 seconds per query
-- **Vector search**: O(n) - linear scan
-- **Similarity range**: 0.0-1.0 (0-100%)
+### Text Query
 
-### Scaling Notes
+Text queries use CLIP text embeddings. Product-name words are also extracted and used to improve retrieval for specific searches such as:
 
-Current system:
-- 10 sample products
-- ~1 MB memory for embeddings
-- Single-machine, CPU or GPU
-
-For production (millions of products):
-- Use Google Vertex AI Vector Search
-- Or Pinecone, Weaviate, Milvus
-- Add approximate nearest neighbor (HNSW)
-
-## Configuration
-
-Edit `config.py` to customize:
-
-```python
-# CLIP Model
-CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
-CLIP_DEVICE = "cuda"  # or "cpu"
-
-# Retrieval
-TOP_K_RETRIEVAL = 5  # Default results
-
-# UI
-STREAMLIT_PAGE_TITLE = "E-commerce Product Assistant"
-MAX_UPLOAD_SIZE_MB = 10
+```text
+show me monopoly and how it is played
 ```
 
-## Troubleshooting
+### Image Query
 
-### CLIP not loading
+Image queries use CLIP image embeddings to retrieve visually similar products.
+
+### Combined Query
+
+Combined mode handles two cases:
+
+- If the text is a question, the image drives retrieval and the text is sent to Llama as the question.
+- If the text is a product description, the app blends text and image embeddings.
+
+## Main Files
+
+- `ui/streamlit_app.py`: Streamlit UI and query workflow
+- `build_embeddings.py`: CLIP embedding build pipeline
+- `rag/chroma_store.py`: ChromaDB vector store
+- `models/llm_integration.py`: Ollama/Llama 3.1 integration
+- `data/preprocessing.py`: Dataset preprocessing
+- `config.py`: Model, retrieval, and UI settings
+
+## Common Commands
+
+Run app:
+
 ```bash
-pip install openai-clip
+streamlit run ui/streamlit_app.py
 ```
 
-### Vector store not found
+Build ChromaDB embeddings:
+
 ```bash
-python build_embeddings.py --generate-sample
+python build_embeddings.py --data data/processed/amazon_products_2020.json --store chroma
 ```
 
-### Port already in use
+Generate sample data for testing only:
+
 ```bash
-streamlit run ui/streamlit_app.py --server.port 8502
+python build_embeddings.py --generate-sample --store chroma
 ```
 
-### GPU memory issues
-The app automatically uses CPU if GPU is unavailable.
+Check Ollama:
 
-## Testing
-
-Run the automated test suite:
 ```bash
-python test_clip_rag.py
+curl http://localhost:11434/api/tags
 ```
-
-Run usage examples:
-```bash
-python example_usage.py
-```
-
-## Next Steps
-
-1. **Explore the system**
-   - Try different queries
-   - Upload your own images
-   - Adjust parameters
-
-2. **Understand the code**
-   - Read `IMPLEMENTATION.md`
-   - Check `example_usage.py`
-   - Review `PROJECT_STRUCTURE.md`
-
-3. **Scale to production**
-   - Download real Amazon dataset
-   - Preprocess products
-   - Build embeddings (takes longer)
-   - Deploy to cloud
-
-4. **Add features**
-   - Add filters (price, brand, category)
-   - Implement feedback loop
-   - Add chat history persistence
-   - Integrate with LLM for detailed responses
-
-## API Reference
-
-### Simple Text Search
-```python
-from models import CLIPEmbeddingModel
-from rag import RetrieverSystem
-
-clip = CLIPEmbeddingModel()
-retriever = RetrieverSystem(vector_store)
-
-# Search
-results = retriever.retrieve_by_text(
-    "smartphone",
-    clip,
-    top_k=5
-)
-
-# Results: [(product_id, similarity, metadata), ...]
-for product_id, sim, meta in results:
-    print(f"{meta['title']}: {sim*100:.1f}%")
-```
-
-### Image Search
-```python
-results = retriever.retrieve_by_image(
-    "phone.jpg",
-    clip,
-    top_k=5
-)
-```
-
-### Combined Search
-```python
-results = retriever.retrieve_by_multimodal(
-    query_text="smartphone",
-    image_path="phone.jpg",
-    embedding_model=clip,
-    top_k=5,
-    text_weight=0.7  # 70% text, 30% image
-)
-```
-
-## Support & Learning
-
-- **Issues**: Check QUICKSTART.md first
-- **Code examples**: See example_usage.py
-- **Architecture**: Read PROJECT_STRUCTURE.md
-- **Implementation details**: See IMPLEMENTATION.md
-
-## Key Concepts
-
-### CLIP
-- Contrastive learning between text and images
-- Maps both modalities to same embedding space
-- Enables cross-modal search
-
-### Embeddings
-- 512-dimensional vectors
-- Normalized to unit length
-- Represent semantic meaning
-
-### Vector Search
-- Cosine similarity between embeddings
-- Fast retrieval of nearest neighbors
-- O(n) complexity for exact search
-
-### RAG Pattern
-- Retrieve relevant context
-- Pass to LLM for generation
-- Improves answer quality
-
-## Resources
-
-- [CLIP Paper](https://arxiv.org/abs/2103.14030)
-- [CLIP GitHub](https://github.com/openai/CLIP)
-- [Streamlit Docs](https://docs.streamlit.io/)
-- [Vector Databases](https://www.pinecone.io/)
-
----
-
-**Ready to go!** Start with `streamlit run ui/streamlit_app.py` 🚀

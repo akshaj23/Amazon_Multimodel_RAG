@@ -24,6 +24,37 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+QUERY_STOPWORDS = {
+    "about",
+    "and",
+    "are",
+    "best",
+    "can",
+    "could",
+    "describe",
+    "does",
+    "for",
+    "give",
+    "have",
+    "how",
+    "include",
+    "includes",
+    "is",
+    "it",
+    "me",
+    "played",
+    "price",
+    "show",
+    "tell",
+    "the",
+    "this",
+    "what",
+    "which",
+    "with",
+    "would",
+    "you",
+}
+
 
 def get_first_image_url(metadata):
     """Return the first real product image URL from a pipe-delimited image field."""
@@ -175,6 +206,44 @@ def normalize_query(query):
     return normalized
 
 
+def is_product_question(text):
+    """Return True when text is a question about an uploaded/retrieved product."""
+    text_lower = (text or "").lower().strip()
+    if not text_lower:
+        return False
+
+    question_terms = [
+        "what",
+        "which",
+        "how",
+        "why",
+        "is",
+        "are",
+        "can",
+        "do",
+        "does",
+        "should",
+        "would",
+        "could",
+        "tell me",
+        "describe",
+        "price",
+        "cost",
+        "brand",
+        "feature",
+        "spec",
+        "include",
+        "category",
+    ]
+    starts_like_question = re.match(
+        r"^(what|which|how|why|is|are|can|do|does|should|would|could|tell me|describe)\b",
+        text_lower,
+    )
+    return text_lower.endswith("?") or bool(starts_like_question) or any(
+        f" {term} " in f" {text_lower} " for term in question_terms
+    )
+
+
 def get_product_type_terms(query):
     """Return domain terms used for deterministic filtering on narrow product asks."""
     query_lower = query.lower()
@@ -196,6 +265,23 @@ def get_product_type_terms(query):
     return []
 
 
+def get_query_product_terms(query):
+    """Extract likely product-name terms from a natural language query."""
+    terms = get_product_type_terms(query)
+    if terms:
+        return terms
+
+    words = re.findall(r"[a-z0-9]+", query.lower())
+    product_terms = []
+    for word in words:
+        if len(word) < 3 or word in QUERY_STOPWORDS:
+            continue
+        if word not in product_terms:
+            product_terms.append(word)
+
+    return product_terms[:4]
+
+
 def metadata_text(metadata):
     """Create searchable text from product metadata."""
     fields = [
@@ -211,7 +297,7 @@ def metadata_text(metadata):
 def search_products(query_embedding, query_text, top_k):
     """Search vector store with optional product-type filtering for precise asks."""
     vector_store = st.session_state.vector_store
-    terms = get_product_type_terms(query_text)
+    terms = get_query_product_terms(query_text)
 
     if not terms:
         return vector_store.search(query_embedding, top_k=top_k)
@@ -638,9 +724,12 @@ def render_combined_query_interface(temperature, top_k):
                     import clip
 
                     combined_embedding = None
+                    use_text_for_retrieval = bool(user_text) and not (
+                        uploaded_image is not None and is_product_question(user_text)
+                    )
 
                     # Generate text embedding
-                    if user_text:
+                    if use_text_for_retrieval:
                         with torch.no_grad():
                             text_tokens = clip.tokenize([user_text], truncate=True).to(st.session_state.device)
                             text_embedding = st.session_state.clip_model.encode_text(text_tokens)
@@ -659,7 +748,8 @@ def render_combined_query_interface(temperature, top_k):
                             image_embedding = image_embedding.cpu().numpy()[0]
 
                         if combined_embedding is None:
-                            combined_embedding = image_embedding * (1 - text_weight)
+                            image_factor = 1 if not use_text_for_retrieval else (1 - text_weight)
+                            combined_embedding = image_embedding * image_factor
                         else:
                             combined_embedding += image_embedding * (1 - text_weight)
 

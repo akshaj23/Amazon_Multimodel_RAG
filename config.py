@@ -32,7 +32,7 @@ LLM_MAX_TOKENS = 220
 LLM_TOP_P = 0.9
 
 # ===== RAG Settings =====
-# Vector Database (Google Vertex AI)
+# Vector Database / Retrieval
 GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
 GOOGLE_REGION = "us-central1"
 VECTOR_STORE_INDEX = "product-embeddings-index"

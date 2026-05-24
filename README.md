@@ -1,143 +1,169 @@
-# Multimodal Conversational AI for E-commerce
+# Amazon Multimodal RAG
 
-A Vision-Language Approach to Customer Support
+Multimodal product search and question answering for the Amazon Product Dataset 2020. The app supports text queries, image queries, and combined text-image queries using CLIP embeddings, ChromaDB retrieval, and local Llama 3.1 responses through Ollama.
 
-## Project Overview
+## Features
 
-This project develops a multimodal conversational chatbot capable of answering product-related questions using both text and image inputs. The system integrates Vision-Language models, Retrieval-Augmented Generation (RAG), and Large Language Models to provide comprehensive customer support for e-commerce platforms.
+- Text search over Amazon product titles, categories, descriptions, features, and metadata
+- Image-based product retrieval with CLIP image embeddings
+- Combined text + image search with question-aware behavior
+- ChromaDB persistent vector store
+- RAG answers generated with Llama 3.1 through Ollama
+- Product cards with title, ASIN, brand, price, category, features, image, and product link
+- Keyword-aware retrieval boosts for product-name queries such as `monopoly`
+- Local execution with no API key required
 
-## Key Features
+## Tech Stack
 
-- **Multimodal Input Processing**: Handle both text queries and image uploads
-- **Vision-Language Embeddings**: Use CLIP for text and image alignment
-- **Retrieval System**: Google Vertex AI Vector Search for efficient data retrieval
-- **Conversational Interface**: LLM integration (Meta-Llama-3.1 or Mixtral)
-- **User-Friendly UI**: Streamlit-based interface
-- **Performance Evaluation**: Retrieval accuracy and response quality metrics
-
-## Project Components
-
-### 1. Understanding Multimodal Data
-- Analyze and preprocess the Amazon Product Dataset 2020
-- Define optimal product attribute combinations
-- Ensure data consistency and quality
-
-### 2. Vision-Language RAG Implementation
-- Generate embeddings using CLIP model
-- Store embeddings in vector database
-- Implement efficient retrieval system
-- Evaluate with Recall@1, Recall@5, Recall@10 metrics
-
-### 3. LLM Integration
-- Integrate open-source LLM (Meta-Llama-3.1 or Mixtral)
-- Implement prompt engineering (zero-shot, few-shot, multi-shot)
-- Enable context-aware response generation
-
-### 4. User Interface
-- Build Streamlit application
-- Support text and image input
-- Display comprehensive responses
+- **UI**: Streamlit
+- **Vision-language model**: CLIP ViT-B/32
+- **Vector database**: ChromaDB
+- **LLM**: Llama 3.1 served locally with Ollama
+- **Core libraries**: PyTorch, NumPy, Pandas, Pillow, Requests
+- **Dataset**: Amazon Product Dataset 2020 from Kaggle
 
 ## Project Structure
 
-```
-├── data/                          # Data processing modules
-│   ├── __init__.py
-│   ├── preprocessing.py           # Data cleaning and preparation
-│   ├── data_loader.py             # Dataset loading utilities
-│   └── amazon_dataset.py          # Amazon Product Dataset 2020 handler
-├── models/                        # Model implementations
-│   ├── __init__.py
-│   ├── clip_embeddings.py         # CLIP-based embedding generation
-│   └── llm_integration.py         # LLM setup and integration
-├── rag/                           # RAG system components
-│   ├── __init__.py
-│   ├── retrieval.py               # Retrieval mechanism
-│   └── vector_store.py            # Vector database management
-├── ui/                            # User interface
-│   ├── __init__.py
-│   └── streamlit_app.py           # Main Streamlit application
-├── evaluation/                    # Evaluation metrics
-│   ├── __init__.py
-│   └── metrics.py                 # Retrieval and response metrics
-├── notebooks/                     # Jupyter notebooks
-│   └── exploration.ipynb          # Data exploration and testing
-├── config.py                      # Configuration settings
-├── requirements.txt               # Python dependencies
-└── README.md                      # This file
+```text
+.
+├── build_embeddings.py          # Builds CLIP embeddings and ChromaDB index
+├── config.py                    # App, model, and retrieval settings
+├── data/
+│   ├── data_loader.py           # Product loading utilities
+│   ├── preprocessing.py         # Amazon dataset cleaning/preprocessing
+│   ├── raw/                     # Local raw data, ignored by Git
+│   └── processed/               # Local processed data, ignored by Git
+├── evaluation/
+│   └── metrics.py               # Retrieval evaluation metrics
+├── models/
+│   ├── clip_embeddings.py       # CLIP embedding helpers
+│   └── llm_integration.py       # Ollama/Llama 3.1 interface and prompts
+├── rag/
+│   ├── chroma_store.py          # Persistent ChromaDB vector store
+│   ├── retrieval.py             # Retrieval system helpers
+│   └── vector_store.py          # JSON/in-memory fallback vector store
+└── ui/
+    └── streamlit_app.py         # Streamlit application
 ```
 
-## Installation
+## Setup
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1. Install dependencies
 
-3. Install and run the local LLM with Ollama:
-   ```bash
-   ollama pull llama3.1
-   ollama serve
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-The app uses Ollama locally, so no LLM API key is required. Local environment
-overrides can be placed in `.env`, which is ignored by Git.
+### 2. Install and start Ollama
 
-## Usage
+Install Ollama from `https://ollama.com`, then pull Llama 3.1:
 
-### Run the Chatbot UI
+```bash
+ollama pull llama3.1
+ollama serve
+```
+
+The app uses `http://localhost:11434` by default.
+
+### 3. Add the Amazon dataset
+
+Download the Kaggle dataset:
+
+```bash
+kaggle datasets download -d promptcloud/amazon-product-dataset-2020
+```
+
+Place the downloaded product file under `data/raw/`. The repository ignores raw and processed data files so large dataset files are not committed.
+
+### 4. Build embeddings
+
+Use ChromaDB for the final app:
+
+```bash
+python build_embeddings.py --data data/processed/amazon_products_2020.json --store chroma
+```
+
+If starting from a CSV or parquet dataset file, `build_embeddings.py` can preprocess it through `data/preprocessing.py`:
+
+```bash
+python build_embeddings.py --data data/raw/your_amazon_file.csv --store chroma
+```
+
+For a small demo only:
+
+```bash
+python build_embeddings.py --generate-sample --store chroma
+```
+
+### 5. Run the app
 
 ```bash
 streamlit run ui/streamlit_app.py
 ```
 
-### Example Interactions
+Open:
 
-**Text-based query:**
-```
-Query: "What are the features of the Samsung Galaxy S21?"
-Response: "The Samsung Galaxy S21 comes with a 6.2-inch Dynamic AMOLED display, 
-a triple-camera setup (12MP wide, 64MP telephoto, 12MP ultrawide), 
-and a 4000mAh battery..."
+```text
+http://localhost:8501
 ```
 
-**Image-based query:**
+## How It Works
+
+1. Product metadata is cleaned and combined into searchable descriptions.
+2. CLIP generates 512-dimensional embeddings for product text.
+3. ChromaDB stores embeddings and product metadata persistently in `chroma_db/`.
+4. User text or uploaded images are encoded with CLIP.
+5. ChromaDB retrieves the nearest products.
+6. Retrieval logic applies keyword/product-name boosts where needed.
+7. Llama 3.1 receives the retrieved product context and generates the final answer.
+
+## Query Modes
+
+### Text Query
+
+Use this for product-name or natural-language searches:
+
+```text
+show me monopoly and how it is played
+which headphones are best
+what is the price of this product
 ```
-Upload product image → System identifies product and describes features/usage
+
+Text retrieval combines CLIP similarity with product keyword filtering when a query contains specific product terms.
+
+### Image Query
+
+Upload a product image. The app uses CLIP image embeddings to retrieve visually similar Amazon products.
+
+### Combined Query
+
+Upload an image and add text. If the text is a question, the image is used for retrieval and the text is used as the Llama question. If the text describes a desired product, the app blends text and image embeddings.
+
+## Configuration
+
+Important settings are in `config.py`:
+
+```python
+LLM_MODEL_NAME = "llama3.1"
+OLLAMA_BASE_URL = "http://localhost:11434"
+LLM_TEMPERATURE = 0.2
+LLM_MAX_TOKENS = 220
+TOP_K_RETRIEVAL = 5
 ```
 
-## Dataset
+Local overrides can be placed in `.env`, which is ignored by Git.
 
-- **Source**: Amazon Product Dataset 2020 (Kaggle)
-- **Components**: Product images, descriptions, attributes
-- **Focus**: Title, brand, price, features, images
+## Notes
 
-## Technologies & Models
+- `data/raw/`, `data/processed/`, and `chroma_db/` are ignored by Git.
+- Ollama must be running for Llama 3.1 answers.
+- If Ollama is unavailable, the UI falls back to metadata-based answers so retrieval can still be tested.
+- Search quality depends on the products indexed in ChromaDB.
 
-- **Embedding Model**: CLIP (Contrastive Language-Image Pre-training)
-- **Vector Database**: ChromaDB
-- **Language Model**: Llama 3.1 through Ollama
-- **Framework**: Streamlit
-- **Libraries**: PyTorch, Transformers, LangChain, ChromaDB
+## Contributor
 
-## Evaluation Metrics
-
-- **Retrieval Accuracy**: Correctness of retrieved items
-- **Recall@K**: Recall@1, Recall@5, Recall@10
-- **Response Quality**: Relevance and accuracy of generated responses
-- **User Experience**: Interface usability and response time
-
-
-## References
-
-1. Radford et al. - Learning Transferable Visual Models From Natural Language Supervision (CLIP)
-2. Liu et al. - Vision-Language Alignment and Variance Adjustment (VLAVA)
-3. Lewis et al. - Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks
-4. Li et al. - Pre-trained Vision and Language Transformer for Multimodal Understanding
+- Akshaj Chandwani
 
 ## License
 
-Academic use only
-
-
+Academic project use.
