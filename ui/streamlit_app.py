@@ -746,16 +746,6 @@ def main():
     # Evaluation section
     render_evaluation_metrics()
 
-    # Footer
-    st.markdown(
-        """
-        ---
-        **Multimodal Conversational AI for E-commerce**
-
-        Built with CLIP, LLM, and Streamlit | UChicago 2024
-        """
-    )
-
 
 if __name__ == "__main__":
     main()
