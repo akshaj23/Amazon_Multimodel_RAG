@@ -141,10 +141,16 @@ def generate_rag_answer(question, results):
     llm = st.session_state.get("llm")
 
     if llm is None:
-        return fallback_answer, "metadata"
+        return fallback_answer, "metadata fallback"
 
     try:
-        answer = llm.generate_product_response(question or "Describe the product.", results_to_llm_products(results))
+        question_lower = (question or "").lower()
+        multi_product_terms = ["compare", "similar", "options", "recommend", "best", "which"]
+        context_results = results[:3] if any(term in question_lower for term in multi_product_terms) else results[:1]
+        answer = llm.generate_product_response(
+            question or "Describe the product.",
+            results_to_llm_products(context_results),
+        )
         if answer:
             return answer, "llama3.1"
     except Exception as exc:
@@ -350,7 +356,7 @@ def render_sidebar():
 
         # Model settings
         st.subheader("Model Configuration")
-        llm_status = "Connected" if st.session_state.get("llm") else "Fallback mode"
+        llm_status = "Connected" if st.session_state.get("llm") else "Unavailable - metadata fallback"
         st.caption(f"LLM: {LLM_MODEL_NAME} ({llm_status})")
 
         temperature = st.slider(

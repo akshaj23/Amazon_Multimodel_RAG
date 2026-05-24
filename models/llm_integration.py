@@ -179,8 +179,10 @@ A:"""
 
 Use only the retrieved product information below. Do not invent facts, ratings,
 reviews, availability, shipping details, or comparisons that are not in the
-retrieved context. Directly answer the user's question first, then add a brief
-supporting detail if useful.
+retrieved context. Treat Product 1 as the primary product. Only discuss other
+products if the user explicitly asks for comparisons or recommendations.
+Directly answer the user's question first, then add a brief supporting detail
+if useful.
 
 Retrieved product information:
 {retrieved_context}
