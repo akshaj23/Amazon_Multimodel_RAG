@@ -1,239 +1,195 @@
 """
-Large Language Model (LLM) integration for conversational responses
+Large Language Model integration for RAG responses.
+
+This module uses a local Ollama server with Llama 3.1 by default. No API key is
+required or stored in the repository.
 """
 
 import logging
-from typing import Optional, Dict, List
 from enum import Enum
+from typing import Dict, List
+
+import requests
+
+from config import (
+    LLM_MAX_TOKENS,
+    LLM_MODEL_NAME,
+    LLM_TEMPERATURE,
+    LLM_TOP_P,
+    OLLAMA_BASE_URL,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class PromptStrategy(Enum):
-    """Enumeration of prompt engineering strategies"""
+    """Prompt engineering strategies supported by the app."""
+
     ZERO_SHOT = "zero_shot"
     FEW_SHOT = "few_shot"
-    CHAIN_OF_THOUGHT = "chain_of_thought"
+    MULTI_SHOT = "multi_shot"
     RAG_AUGMENTED = "rag_augmented"
 
 
 class LLMInterface:
     """
-    Interface for Large Language Model integration
+    Ollama-backed LLM interface for product Q&A.
 
-    Supports:
-    - Multiple prompt engineering strategies
-    - Context-aware response generation
-    - RAG-augmented generation
+    The default model is `llama3.1`. Run `ollama pull llama3.1` and keep the
+    Ollama app/server running before using LLM responses.
     """
 
     def __init__(
         self,
-        model_name: str = "meta-llama/Llama-2-7b-hf",
-        temperature: float = 0.7,
-        max_tokens: int = 512,
-        device: str = "cuda"
+        model_name: str = LLM_MODEL_NAME,
+        temperature: float = LLM_TEMPERATURE,
+        max_tokens: int = LLM_MAX_TOKENS,
+        base_url: str = OLLAMA_BASE_URL,
+        timeout: int = 60,
     ):
-        """
-        Initialize LLM interface
-
-        Args:
-            model_name: Model identifier (from HuggingFace)
-            temperature: Generation temperature (0-1)
-            max_tokens: Maximum tokens to generate
-            device: Device to load model on
-        """
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.device = device
-        self.model = None
-        self.tokenizer = None
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
 
-        logger.info(f"Initialized LLM interface for {model_name}")
-
-        # Note: Actual model loading will be handled in load_model()
+    def is_available(self) -> bool:
+        """Return True when the Ollama server is reachable."""
+        try:
+            response = requests.get(f"{self.base_url}/api/tags", timeout=3)
+            response.raise_for_status()
+            return True
+        except requests.RequestException:
+            return False
 
     def load_model(self) -> None:
-        """
-        Load the language model
+        """Validate that Ollama is reachable and warn if the model is missing."""
+        response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+        response.raise_for_status()
+        models = response.json().get("models", [])
+        available = {model.get("name", "").split(":")[0] for model in models}
 
-        This method should be implemented with actual model loading logic
-        using transformers library or API calls
-        """
-        try:
-            from transformers import AutoTokenizer, AutoModelForCausalLM
-
-            logger.info(f"Loading model: {self.model_name}")
-
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(
+        if self.model_name.split(":")[0] not in available:
+            logger.warning(
+                "Ollama model %s is not listed locally. Pull it with: ollama pull %s",
                 self.model_name,
-                device_map=self.device,
-                torch_dtype="auto"
+                self.model_name,
             )
-
-            logger.info(f"Model loaded successfully on {self.device}")
-
-        except ImportError:
-            logger.warning("transformers library not installed. Using mock model.")
-            self.model = None
-            self.tokenizer = None
-        except Exception as e:
-            logger.error(f"Error loading model: {e}")
-            raise
 
     def generate(
         self,
         prompt: str,
         strategy: PromptStrategy = PromptStrategy.RAG_AUGMENTED,
-        **kwargs
+        **kwargs,
     ) -> str:
-        """
-        Generate response using the LLM
+        """Generate an answer with Ollama."""
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": kwargs.get("temperature", self.temperature),
+                "top_p": kwargs.get("top_p", LLM_TOP_P),
+                "num_predict": kwargs.get("max_tokens", self.max_tokens),
+            },
+        }
 
-        Args:
-            prompt: Input prompt
-            strategy: Prompt engineering strategy
-            **kwargs: Additional generation parameters
-
-        Returns:
-            Generated response
-        """
-        if self.model is None:
-            logger.warning("Model not loaded. Returning mock response.")
-            return self._generate_mock_response(prompt)
-
-        logger.debug(f"Generating response with {strategy.value} strategy")
-
-        try:
-            # Prepare input
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-
-            # Generate
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=self.max_tokens,
-                temperature=self.temperature,
-                top_p=kwargs.get('top_p', 0.9),
-                do_sample=True,
-            )
-
-            # Decode response
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-            # Remove the prompt from the response
-            response = response[len(prompt):].strip()
-
-            return response
-
-        except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            raise
+        response = requests.post(
+            f"{self.base_url}/api/generate",
+            json=payload,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json().get("response", "").strip()
 
     def zero_shot_prompt(self, question: str, context: str = "") -> str:
-        """
-        Create zero-shot prompt
+        """Create a zero-shot prompt."""
+        return f"""You are a helpful e-commerce product assistant.
 
-        Args:
-            question: User question
-            context: Optional context information
+Use only the product data provided in context. If the answer is not available,
+say that it is not available in the retrieved product data.
 
-        Returns:
-            Formatted prompt
-        """
-        prompt = f"""You are a helpful e-commerce product assistant.
-
-{f'Context: {context}' if context else ''}
+Context:
+{context}
 
 Question: {question}
 
-Answer: """
-        return prompt
+Answer:"""
 
     def few_shot_prompt(
         self,
         question: str,
         examples: List[Dict[str, str]] = None,
-        context: str = ""
+        context: str = "",
     ) -> str:
-        """
-        Create few-shot prompt with examples
+        """Create a few-shot prompt."""
+        examples = examples or [
+            {
+                "question": "What is the price?",
+                "answer": "The listed price is the price field from the retrieved product.",
+            },
+            {
+                "question": "What brand is it?",
+                "answer": "The brand is the brand field from the retrieved product, or N/A if missing.",
+            },
+        ]
 
-        Args:
-            question: User question
-            examples: List of example QA pairs
-            context: Optional context
-
-        Returns:
-            Formatted prompt with examples
-        """
         prompt = "You are a helpful e-commerce product assistant.\n\n"
+        prompt += "Examples:\n"
+        for example in examples:
+            prompt += f"Q: {example['question']}\nA: {example['answer']}\n\n"
 
-        # Add examples
-        if examples:
-            prompt += "Examples:\n"
-            for i, example in enumerate(examples, 1):
-                prompt += f"{i}. Q: {example['question']}\nA: {example['answer']}\n\n"
+        prompt += f"""Product context:
+{context}
 
-        if context:
-            prompt += f"Context: {context}\n\n"
-
-        prompt += f"Question: {question}\nAnswer: "
-
+Q: {question}
+A:"""
         return prompt
+
+    def multi_shot_prompt(self, question: str, context: str = "") -> str:
+        """Create a multi-shot prompt with several product-support examples."""
+        examples = [
+            {
+                "question": "What is this product?",
+                "answer": "Identify the product using the retrieved title and category.",
+            },
+            {
+                "question": "What is the price?",
+                "answer": "Answer with the exact retrieved price and product name.",
+            },
+            {
+                "question": "What are the features?",
+                "answer": "Summarize the retrieved features and description without adding outside facts.",
+            },
+            {
+                "question": "How do I use it?",
+                "answer": "Explain likely usage only from the retrieved title, category, features, and description.",
+            },
+        ]
+        return self.few_shot_prompt(question, examples=examples, context=context)
 
     def rag_augmented_prompt(
         self,
         question: str,
         retrieved_context: str,
-        source_info: str = ""
+        source_info: str = "",
     ) -> str:
-        """
-        Create RAG-augmented prompt with retrieved context
+        """Create a RAG prompt grounded in retrieved products."""
+        return f"""You are a helpful e-commerce product assistant.
 
-        Args:
-            question: User question
-            retrieved_context: Context retrieved from vector database
-            source_info: Information about context sources
+Use only the retrieved product information below. Do not invent facts, ratings,
+reviews, availability, shipping details, or comparisons that are not in the
+retrieved context. Directly answer the user's question first, then add a brief
+supporting detail if useful.
 
-        Returns:
-            Formatted RAG prompt
-        """
-        prompt = f"""You are a helpful e-commerce product assistant with access to a product database.
-
-Use the following product information to answer the user's question accurately.
-
-Product Information:
+Retrieved product information:
 {retrieved_context}
 
-{f'Sources: {source_info}' if source_info else ''}
+{f"Sources: {source_info}" if source_info else ""}
 
-User Question: {question}
+User question: {question}
 
-Helpful Answer: """
-        return prompt
-
-    def chain_of_thought_prompt(self, question: str, context: str = "") -> str:
-        """
-        Create chain-of-thought prompt for complex reasoning
-
-        Args:
-            question: User question
-            context: Optional context
-
-        Returns:
-            Formatted COT prompt
-        """
-        prompt = f"""You are a helpful e-commerce product assistant.
-
-{f'Context: {context}' if context else ''}
-
-Question: {question}
-
-Let's think step by step:
-1. """
-        return prompt
+Answer:"""
 
     def generate_with_strategy(
         self,
@@ -241,85 +197,52 @@ Let's think step by step:
         strategy: PromptStrategy = PromptStrategy.RAG_AUGMENTED,
         context: str = "",
         examples: List[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> str:
-        """
-        Generate response with specific prompt engineering strategy
-
-        Args:
-            question: User question
-            strategy: Prompt engineering strategy
-            context: Context information
-            examples: Examples for few-shot learning
-            **kwargs: Additional parameters
-
-        Returns:
-            Generated response
-        """
+        """Generate a response with the requested prompt strategy."""
         if strategy == PromptStrategy.ZERO_SHOT:
             prompt = self.zero_shot_prompt(question, context)
         elif strategy == PromptStrategy.FEW_SHOT:
-            prompt = self.few_shot_prompt(question, examples, context)
-        elif strategy == PromptStrategy.CHAIN_OF_THOUGHT:
-            prompt = self.chain_of_thought_prompt(question, context)
+            prompt = self.few_shot_prompt(question, examples=examples, context=context)
+        elif strategy == PromptStrategy.MULTI_SHOT:
+            prompt = self.multi_shot_prompt(question, context)
         elif strategy == PromptStrategy.RAG_AUGMENTED:
             prompt = self.rag_augmented_prompt(question, context)
         else:
-            raise ValueError(f"Unknown strategy: {strategy}")
+            raise ValueError(f"Unknown prompt strategy: {strategy}")
 
-        return self.generate(prompt, strategy, **kwargs)
+        return self.generate(prompt, strategy=strategy, **kwargs)
 
-    def _generate_mock_response(self, prompt: str) -> str:
-        """
-        Generate a mock response when model is not available
+    def generate_product_response(
+        self,
+        query: str,
+        retrieved_products: List[Dict],
+        strategy: PromptStrategy = PromptStrategy.RAG_AUGMENTED,
+    ) -> str:
+        """Generate a product answer using retrieved product metadata."""
+        context = self._format_products_context(retrieved_products)
+        return self.generate_with_strategy(query, strategy=strategy, context=context)
 
-        Args:
-            prompt: Input prompt
+    def _format_products_context(self, products: List[Dict]) -> str:
+        """Format products as compact context for the LLM."""
+        if not products:
+            return "No products were retrieved."
 
-        Returns:
-            Mock response
-        """
-        logger.debug("Generating mock response")
+        parts = []
+        for i, product in enumerate(products, 1):
+            metadata = product.get("metadata", product)
+            parts.append(
+                "\n".join(
+                    [
+                        f"Product {i}: {metadata.get('title', 'Unknown')}",
+                        f"ASIN: {metadata.get('asin', metadata.get('product_id', 'N/A'))}",
+                        f"Brand: {metadata.get('brand') or 'N/A'}",
+                        f"Price: {metadata.get('price', 'N/A')}",
+                        f"Category: {metadata.get('category') or 'N/A'}",
+                        f"Features: {metadata.get('features') or 'N/A'}",
+                        f"Description: {metadata.get('description') or 'N/A'}",
+                    ]
+                )
+            )
 
-        mock_responses = {
-            "samsung galaxy": "The Samsung Galaxy S21 comes with a 6.2-inch Dynamic AMOLED display, "
-                            "a triple-camera setup (12MP wide, 64MP telephoto, 12MP ultrawide), "
-                            "and a 4000mAh battery.",
-            "airpods": "The Apple AirPods Pro feature active noise cancellation, customizable fit "
-                      "with silicone tips, and are sweat and water-resistant.",
-            "amazon echo": "The Amazon Echo Dot features Alexa voice assistant, 1.6-inch speaker, "
-                          "and Bluetooth connectivity.",
-        }
-
-        # Find matching key
-        prompt_lower = prompt.lower()
-        for key, response in mock_responses.items():
-            if key in prompt_lower:
-                return response
-
-        return "I'm a helpful product assistant. I can help answer questions about products. " \
-               "Please ask about a specific product!"
-
-    def set_temperature(self, temperature: float) -> None:
-        """
-        Set generation temperature
-
-        Args:
-            temperature: Temperature value (0-1)
-        """
-        if 0 <= temperature <= 1:
-            self.temperature = temperature
-        else:
-            logger.warning(f"Temperature must be between 0 and 1, got {temperature}")
-
-    def set_max_tokens(self, max_tokens: int) -> None:
-        """
-        Set maximum tokens to generate
-
-        Args:
-            max_tokens: Maximum token count
-        """
-        if max_tokens > 0:
-            self.max_tokens = max_tokens
-        else:
-            logger.warning(f"max_tokens must be positive, got {max_tokens}")
+        return "\n\n".join(parts)

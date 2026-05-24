@@ -24,7 +24,9 @@ CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
 CLIP_DEVICE = "cuda"  # or "cpu"
 
 # LLM Configuration
-LLM_MODEL_NAME = "meta-llama/Llama-2-7b-hf"  # or "mistralai/Mixtral-8x7B"
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "llama3.1")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_TEMPERATURE = 0.7
 LLM_MAX_TOKENS = 512
 LLM_TOP_P = 0.9

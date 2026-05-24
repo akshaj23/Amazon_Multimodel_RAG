@@ -75,9 +75,14 @@ This project develops a multimodal conversational chatbot capable of answering p
    pip install -r requirements.txt
    ```
 
-3. Set up API keys and credentials (if needed):
-   - Google Cloud credentials for Vertex AI Vector Search
-   - HuggingFace token for model access
+3. Install and run the local LLM with Ollama:
+   ```bash
+   ollama pull llama3.1
+   ollama serve
+   ```
+
+The app uses Ollama locally, so no LLM API key is required. Local environment
+overrides can be placed in `.env`, which is ignored by Git.
 
 ## Usage
 
@@ -111,10 +116,10 @@ Upload product image → System identifies product and describes features/usage
 ## Technologies & Models
 
 - **Embedding Model**: CLIP (Contrastive Language-Image Pre-training)
-- **Vector Database**: Google Vertex AI Vector Search
-- **Language Models**: Meta-Llama-3.1 or Mixtral
+- **Vector Database**: ChromaDB
+- **Language Model**: Llama 3.1 through Ollama
 - **Framework**: Streamlit
-- **Libraries**: PyTorch, Transformers, LangChain
+- **Libraries**: PyTorch, Transformers, LangChain, ChromaDB
 
 ## Evaluation Metrics
 

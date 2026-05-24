@@ -14,6 +14,7 @@ import re
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
+    LLM_MODEL_NAME,
     STREAMLIT_PAGE_TITLE,
     STREAMLIT_PAGE_ICON,
     STREAMLIT_LAYOUT,
@@ -105,6 +106,51 @@ def answer_product_question(question, results):
         f"Based on the top retrieved product, this is **{title}**. "
         f"Price: **{price}**. Category: **{category}**. Details: {features}"
     )
+
+
+def results_to_llm_products(results):
+    """Convert retrieval tuples into the format expected by LLMInterface."""
+    products = []
+    for product_id, similarity, metadata in results:
+        product_metadata = dict(metadata)
+        product_metadata.setdefault("asin", product_id)
+        product_metadata["similarity"] = f"{similarity * 100:.1f}%"
+        products.append({"metadata": product_metadata})
+    return products
+
+
+@st.cache_resource
+def load_llm():
+    """Load the local Llama 3.1 interface if Ollama is available."""
+    try:
+        from models.llm_integration import LLMInterface
+
+        llm = LLMInterface()
+        if not llm.is_available():
+            return None
+        llm.load_model()
+        return llm
+    except Exception as exc:
+        logger.warning("LLM unavailable, falling back to metadata answers: %s", exc)
+        return None
+
+
+def generate_rag_answer(question, results):
+    """Generate an LLM-grounded answer, falling back to deterministic metadata QA."""
+    fallback_answer = answer_product_question(question, results)
+    llm = st.session_state.get("llm")
+
+    if llm is None:
+        return fallback_answer, "metadata"
+
+    try:
+        answer = llm.generate_product_response(question or "Describe the product.", results_to_llm_products(results))
+        if answer:
+            return answer, "llama3.1"
+    except Exception as exc:
+        logger.warning("LLM answer failed, falling back to metadata answer: %s", exc)
+
+    return fallback_answer, "metadata"
 
 
 def normalize_query(query):
@@ -281,6 +327,8 @@ def init_session_state():
         st.session_state.clip_model, st.session_state.preprocess, st.session_state.device = load_clip_model()
     if 'vector_store' not in st.session_state:
         st.session_state.vector_store = load_vector_store()
+    if 'llm' not in st.session_state:
+        st.session_state.llm = load_llm()
 
 
 def configure_page():
@@ -302,6 +350,9 @@ def render_sidebar():
 
         # Model settings
         st.subheader("Model Configuration")
+        llm_status = "Connected" if st.session_state.get("llm") else "Fallback mode"
+        st.caption(f"LLM: {LLM_MODEL_NAME} ({llm_status})")
+
         temperature = st.slider(
             "Temperature",
             min_value=0.0,
@@ -422,7 +473,7 @@ def render_text_query_interface(temperature, top_k):
                             st.info(f"Interpreting query as: {normalized_query}")
 
                         # Create response
-                        direct_answer = answer_product_question(normalized_query, results)
+                        direct_answer, answer_source = generate_rag_answer(normalized_query, results)
                         response_text = f"{direct_answer}\n\nFound {len(results)} relevant products for your query.\n\n"
                         for i, (product_id, similarity, metadata) in enumerate(results, 1):
                             response_text += f"**{i}. {metadata.get('title', 'Unknown')}** (Match: {similarity*100:.1f}%)\n"
@@ -438,6 +489,7 @@ def render_text_query_interface(temperature, top_k):
                         st.success("✅ Retrieved relevant products!")
                         st.subheader("Answer")
                         st.markdown(direct_answer)
+                        st.caption(f"Answer source: {answer_source}")
 
                         # Display results
                         st.subheader("Retrieved Products")
@@ -508,7 +560,7 @@ def render_image_query_interface(temperature, top_k):
                         if results:
                             st.session_state.retrieved_products = results
 
-                            direct_answer = answer_product_question(additional_question, results)
+                            direct_answer, answer_source = generate_rag_answer(additional_question, results)
                             response_text = f"{direct_answer}\n\n✅ Found {len(results)} similar products based on the image.\n\n"
                             for i, (product_id, similarity, metadata) in enumerate(results, 1):
                                 response_text += f"**{i}. {metadata.get('title', 'Unknown')}** (Similarity: {similarity*100:.1f}%)\n"
@@ -523,6 +575,7 @@ def render_image_query_interface(temperature, top_k):
                             st.success("✅ Image analysis complete!")
                             st.subheader("Answer")
                             st.markdown(direct_answer)
+                            st.caption(f"Answer source: {answer_source}")
 
                             st.subheader("Similar Products Found")
 
@@ -618,7 +671,7 @@ def render_combined_query_interface(temperature, top_k):
                     if results:
                         st.session_state.retrieved_products = results
 
-                        direct_answer = answer_product_question(user_text, results)
+                        direct_answer, answer_source = generate_rag_answer(user_text, results)
                         response_text = f"{direct_answer}\n\n✅ Found {len(results)} products matching your multimodal query.\n\n"
                         for i, (product_id, similarity, metadata) in enumerate(results, 1):
                             response_text += f"**{i}. {metadata.get('title', 'Unknown')}** (Match: {similarity*100:.1f}%)\n"
@@ -632,6 +685,7 @@ def render_combined_query_interface(temperature, top_k):
                         st.success("✅ Multimodal search complete!")
                         st.subheader("Answer")
                         st.markdown(direct_answer)
+                        st.caption(f"Answer source: {answer_source}")
 
                         st.subheader("Results")
 
