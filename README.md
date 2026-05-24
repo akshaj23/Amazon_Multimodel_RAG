@@ -123,13 +123,6 @@ Upload product image → System identifies product and describes features/usage
 - **Response Quality**: Relevance and accuracy of generated responses
 - **User Experience**: Interface usability and response time
 
-## Expected Deliverables
-
-- ✓ Fully functional multimodal chatbot
-- ✓ Detailed documentation
-- ✓ Streamlit UI interface
-- ✓ Research report with findings
-- ✓ Evaluation metrics and results
 
 ## References
 
@@ -142,6 +135,4 @@ Upload product image → System identifies product and describes features/usage
 
 Academic use only
 
-## Contact
 
-For questions or issues, contact: akshajchandwani@uchicago.edu
