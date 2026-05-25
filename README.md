@@ -46,6 +46,8 @@ Multimodal product search and question answering for the Amazon Product Dataset 
     └── streamlit_app.py         # Streamlit application
 ```
 
+See [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md) for the full system architecture diagram.
+
 ## Setup
 
 ### 1. Install dependencies
