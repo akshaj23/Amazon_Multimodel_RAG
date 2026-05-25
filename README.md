@@ -160,10 +160,6 @@ Local overrides can be placed in `.env`, which is ignored by Git.
 - If Ollama is unavailable, the UI falls back to metadata-based answers so retrieval can still be tested.
 - Search quality depends on the products indexed in ChromaDB.
 
-## Contributor
-
-- Akshaj Chandwani
-
 ## License
 
 Academic project use.
