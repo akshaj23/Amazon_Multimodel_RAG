@@ -1,3 +1,0 @@
-# Contributors
-
-- Akshaj Chandwani
