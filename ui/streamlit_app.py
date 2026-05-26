@@ -108,8 +108,14 @@ def answer_product_question(question, results):
             f"The listed price is **{price}**, and it is categorized as **{category}**."
         )
 
-    if any(term in question_lower for term in ["price", "cost", "how much", "sell", "selling"]):
+    if any(term in question_lower for term in ["price", "cost", "how much"]):
         return f"The listed price for **{title}** is **{price}**."
+
+    if any(term in question_lower for term in ["do you sell", "do you have", "available", "availability"]):
+        return (
+            f"The closest matching product I found in the indexed data is **{title}**. "
+            f"It is listed at **{price}**."
+        )
 
     if "brand" in question_lower or "who makes" in question_lower:
         return f"The listed brand for **{title}** is **{brand}**."
