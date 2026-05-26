@@ -10,6 +10,7 @@ retrieved. With one relevant item per query, Recall@K is equivalent to hit@K.
 import argparse
 import json
 import logging
+import re
 import sys
 from io import BytesIO
 from pathlib import Path
@@ -34,6 +35,26 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+}
 
 
 def parse_k_values(value: str) -> List[int]:
@@ -114,6 +135,8 @@ def sample_products(
 ) -> List[Dict]:
     """Filter products to evaluable rows and return a deterministic random sample."""
     eligible = []
+    requires_text = mode in {"title", "hard-title", "both", "all"}
+    requires_image = mode in {"photo", "both", "all"}
     for product in products:
         product_id = normalize_product_id(product)
         has_title = bool(str(product.get("title") or "").strip())
@@ -121,9 +144,9 @@ def sample_products(
 
         if not product_id:
             continue
-        if mode in {"title", "both"} and not has_title:
+        if requires_text and not has_title:
             continue
-        if mode in {"photo", "both"} and not has_image:
+        if requires_image and not has_image:
             continue
 
         eligible.append(product)
@@ -141,13 +164,75 @@ def retrieved_ids_from_results(results: Iterable[Tuple[str, float, Dict]]) -> Li
     return [str(product_id) for product_id, _score, _metadata in results]
 
 
-def evaluate_title_queries(
+def product_category_leaf(product: Dict) -> str:
+    category = str(product.get("category") or "").strip()
+    if not category:
+        return ""
+    return category.split(">")[-1].strip()
+
+
+def compact_text(value: str, max_words: int = 8) -> str:
+    """Create a shorter query by keeping content words and model-like tokens."""
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9.+-]*", value)
+    kept = []
+    for word in words:
+        if word.lower() in STOPWORDS:
+            continue
+        kept.append(word)
+        if len(kept) >= max_words:
+            break
+    return " ".join(kept)
+
+
+def hard_title_queries(product: Dict) -> List[Tuple[str, str]]:
+    """
+    Generate harder title-derived queries without hand labels.
+
+    These are intentionally less exact than the full product title, so they
+    test whether retrieval still finds the sampled ASIN when query wording is
+    shorter or more natural.
+    """
+    title = str(product.get("title") or "").strip()
+    brand = str(product.get("brand") or "").strip()
+    category_leaf = product_category_leaf(product)
+    features = str(product.get("features") or product.get("description") or "").strip()
+
+    candidates = []
+
+    short_title = compact_text(title, max_words=6)
+    if short_title and short_title.lower() != title.lower():
+        candidates.append(("hard_short_title", short_title))
+
+    if brand and category_leaf:
+        candidates.append(("hard_brand_category", f"{brand} {category_leaf}"))
+        candidates.append(("hard_natural_language", f"show me a {category_leaf} from {brand}"))
+    elif category_leaf:
+        candidates.append(("hard_natural_language", f"show me a {category_leaf}"))
+
+    feature_query = compact_text(features, max_words=8)
+    if feature_query:
+        candidates.append(("hard_features", feature_query))
+
+    seen = set()
+    unique_candidates = []
+    for query_type, query in candidates:
+        normalized = query.lower().strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique_candidates.append((query_type, query.strip()))
+
+    return unique_candidates
+
+
+def evaluate_text_queries(
     sample: Sequence[Dict],
     vector_store,
     embedding_model: CLIPEmbeddingModel,
     k_values: Sequence[int],
+    query_builder,
+    metrics_name: str,
 ) -> Tuple[Dict[str, float], List[Dict]]:
-    """Evaluate retrieval when the query is the product title."""
+    """Evaluate retrieval for text queries built from each sampled product."""
     metrics = EvaluationMetrics()
     max_k = max(k_values)
     retrieved_lists = []
@@ -157,28 +242,71 @@ def evaluate_title_queries(
     for product in sample:
         product_id = normalize_product_id(product)
         title = str(product.get("title") or "").strip()
-        query_embedding = embedding_model.encode_text(title)
-        if query_embedding.ndim > 1:
-            query_embedding = query_embedding[0]
+        for query_type, query in query_builder(product):
+            query_embedding = embedding_model.encode_text(query)
+            if query_embedding.ndim > 1:
+                query_embedding = query_embedding[0]
 
-        results = vector_store.search(query_embedding, top_k=max_k)
-        retrieved_ids = retrieved_ids_from_results(results)
+            results = vector_store.search(query_embedding, top_k=max_k)
+            retrieved_ids = retrieved_ids_from_results(results)
 
-        retrieved_lists.append(retrieved_ids)
-        ground_truth_lists.append([product_id])
-        details.append(
-            {
-                "query_type": "title",
-                "asin": product_id,
-                "title": title,
-                "retrieved_ids": retrieved_ids,
-                "first_rank": (retrieved_ids.index(product_id) + 1)
-                if product_id in retrieved_ids
-                else None,
-            }
-        )
+            retrieved_lists.append(retrieved_ids)
+            ground_truth_lists.append([product_id])
+            details.append(
+                {
+                    "query_type": query_type,
+                    "asin": product_id,
+                    "title": title,
+                    "query": query,
+                    "retrieved_ids": retrieved_ids,
+                    "first_rank": (retrieved_ids.index(product_id) + 1)
+                    if product_id in retrieved_ids
+                    else None,
+                }
+            )
 
-    return metrics.evaluate_retrieval(retrieved_lists, ground_truth_lists, list(k_values)), details
+    if not retrieved_lists:
+        return {"query_count": 0}, details
+
+    result = metrics.evaluate_retrieval(retrieved_lists, ground_truth_lists, list(k_values))
+    result["query_count"] = len(retrieved_lists)
+    result["products_evaluated"] = len(sample)
+    result["metric_set"] = metrics_name
+    return result, details
+
+
+def evaluate_title_queries(
+    sample: Sequence[Dict],
+    vector_store,
+    embedding_model: CLIPEmbeddingModel,
+    k_values: Sequence[int],
+) -> Tuple[Dict[str, float], List[Dict]]:
+    """Evaluate retrieval when the query is the exact product title."""
+    return evaluate_text_queries(
+        sample,
+        vector_store,
+        embedding_model,
+        k_values,
+        query_builder=lambda product: [("title", str(product.get("title") or "").strip())],
+        metrics_name="title",
+    )
+
+
+def evaluate_hard_title_queries(
+    sample: Sequence[Dict],
+    vector_store,
+    embedding_model: CLIPEmbeddingModel,
+    k_values: Sequence[int],
+) -> Tuple[Dict[str, float], List[Dict]]:
+    """Evaluate harder title-derived text queries."""
+    return evaluate_text_queries(
+        sample,
+        vector_store,
+        embedding_model,
+        k_values,
+        query_builder=hard_title_queries,
+        metrics_name="hard_title",
+    )
 
 
 def evaluate_photo_queries(
@@ -210,8 +338,19 @@ def evaluate_photo_queries(
             error = None
         except Exception as exc:
             logger.warning("Skipping image query for %s: %s", product_id, exc)
-            retrieved_ids = []
-            error = str(exc)
+            details.append(
+                {
+                    "query_type": "photo",
+                    "asin": product_id,
+                    "title": title,
+                    "image": image_ref,
+                    "retrieved_ids": [],
+                    "first_rank": None,
+                    "error": str(exc),
+                    "skipped": True,
+                }
+            )
+            continue
 
         retrieved_lists.append(retrieved_ids)
         ground_truth_lists.append([product_id])
@@ -225,11 +364,26 @@ def evaluate_photo_queries(
                 "first_rank": (retrieved_ids.index(product_id) + 1)
                 if product_id in retrieved_ids
                 else None,
-                "error": error,
+                "error": None,
+                "skipped": False,
             }
         )
 
-    return metrics.evaluate_retrieval(retrieved_lists, ground_truth_lists, list(k_values)), details
+    skipped_queries = sum(1 for row in details if row.get("skipped"))
+    if not retrieved_lists:
+        return {
+            "query_count": len(details),
+            "successful_queries": 0,
+            "skipped_queries": skipped_queries,
+            "skip_reason": "image_download_or_load_failed",
+        }, details
+
+    result = metrics.evaluate_retrieval(retrieved_lists, ground_truth_lists, list(k_values))
+    result["query_count"] = len(details)
+    result["successful_queries"] = len(retrieved_lists)
+    result["skipped_queries"] = skipped_queries
+    result["metric_set"] = "photo"
+    return result, details
 
 
 def summarize_metrics(result: Dict, k_values: Sequence[int]) -> Dict[str, float]:
@@ -257,10 +411,11 @@ def summarize_metrics(result: Dict, k_values: Sequence[int]) -> Dict[str, float]
 
     if "title" in query_metrics and "photo" in query_metrics:
         for k in k_values:
-            summary[f"photo_minus_title_recall@{k}"] = (
-                query_metrics["photo"][f"recall@{k}"]
-                - query_metrics["title"][f"recall@{k}"]
-            )
+            if f"recall@{k}" in query_metrics["photo"]:
+                summary[f"photo_minus_title_recall@{k}"] = (
+                    query_metrics["photo"][f"recall@{k}"]
+                    - query_metrics["title"][f"recall@{k}"]
+                )
 
     return summary
 
@@ -276,7 +431,17 @@ def write_details_csv(path: Path, details: Sequence[Dict]) -> None:
     import csv
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    fields = ["query_type", "asin", "title", "image", "first_rank", "error", "retrieved_ids"]
+    fields = [
+        "query_type",
+        "asin",
+        "title",
+        "query",
+        "image",
+        "first_rank",
+        "skipped",
+        "error",
+        "retrieved_ids",
+    ]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -306,7 +471,7 @@ def run(args) -> Dict:
     query_metrics = {}
     details = []
 
-    if args.mode in {"title", "both"}:
+    if args.mode in {"title", "both", "all"}:
         title_metrics, title_details = evaluate_title_queries(
             sample,
             vector_store,
@@ -316,7 +481,17 @@ def run(args) -> Dict:
         query_metrics["title"] = title_metrics
         details.extend(title_details)
 
-    if args.mode in {"photo", "both"}:
+    if args.mode in {"hard-title", "all"}:
+        hard_title_metrics, hard_title_details = evaluate_hard_title_queries(
+            sample,
+            vector_store,
+            embedding_model,
+            args.k_values,
+        )
+        query_metrics["hard_title"] = hard_title_metrics
+        details.extend(hard_title_details)
+
+    if args.mode in {"photo", "both", "all"}:
         photo_metrics, photo_details = evaluate_photo_queries(
             sample,
             vector_store,
@@ -367,7 +542,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling")
     parser.add_argument(
         "--mode",
-        choices=["title", "photo", "both"],
+        choices=["title", "hard-title", "photo", "both", "all"],
         default="both",
         help="Which query types to evaluate",
     )

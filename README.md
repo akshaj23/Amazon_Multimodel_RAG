@@ -150,6 +150,7 @@ What the evaluator does:
 
 - Randomly samples products from the dataset, with `50` samples by default.
 - Uses each sampled product title as a text query.
+- Optionally creates harder title-derived queries, such as shortened titles, brand/category queries, natural-language queries, and feature-only queries.
 - Uses each sampled product image as a photo query when an image URL or path is available.
 - Cross-checks retrieved product IDs against the sampled product's ASIN.
 - Computes average Recall@1, Recall@5, Recall@10, MRR, and NDCG.
@@ -161,10 +162,11 @@ Run a random 50-product recall check for product title and image queries:
 python evaluation/random_sample_recall.py \
   --data data/processed/amazon_products_2020.json \
   --sample-size 50 \
-  --mode both
+  --mode all
 ```
 
 The script reports averaged Recall@1, Recall@5, Recall@10, MRR, and NDCG, then writes aggregate metrics to `evaluation/results/random_sample_recall_metrics.json` and per-query details to `evaluation/results/random_sample_recall_details.csv`.
+If image URLs cannot be downloaded, photo queries are counted as skipped instead of being averaged as failed retrievals.
 
 Useful variants:
 
@@ -174,6 +176,12 @@ python evaluation/random_sample_recall.py \
   --data data/processed/amazon_products_2020.json \
   --sample-size 50 \
   --mode title
+
+# Harder title-derived recall test
+python evaluation/random_sample_recall.py \
+  --data data/processed/amazon_products_2020.json \
+  --sample-size 50 \
+  --mode hard-title
 
 # Photo-only recall test
 python evaluation/random_sample_recall.py \
@@ -185,7 +193,7 @@ python evaluation/random_sample_recall.py \
 python evaluation/random_sample_recall.py \
   --data data/processed/amazon_products_2020.json \
   --sample-size 50 \
-  --mode both \
+  --mode all \
   --k-values 1,3,5,10
 ```
 
