@@ -140,15 +140,29 @@ class ChromaVectorStore:
                 if current is None or boosted > current[0]:
                     target[product_id] = (boosted, metadata)
 
-        merged = primary or fallback
-        if not merged:
+        ranked_items = []
+        seen = set()
+
+        for group in (primary, fallback):
+            for product_id, (score, metadata) in sorted(
+                group.items(),
+                key=lambda item: item[1][0],
+                reverse=True,
+            ):
+                if product_id not in seen:
+                    ranked_items.append((product_id, float(score), metadata))
+                    seen.add(product_id)
+
+        if not ranked_items:
             return self.search(query_embedding, top_k=top_k)
 
-        sorted_results = sorted(merged.items(), key=lambda item: item[1][0], reverse=True)
-        return [
-            (product_id, float(score), metadata)
-            for product_id, (score, metadata) in sorted_results[:top_k]
-        ]
+        if len(ranked_items) < top_k:
+            for product_id, similarity, metadata in self.search(query_embedding, top_k=top_k):
+                if product_id not in seen:
+                    ranked_items.append((product_id, float(similarity), metadata))
+                    seen.add(product_id)
+
+        return ranked_items[:top_k]
 
     def get_size(self) -> int:
         """Return number of indexed embeddings."""

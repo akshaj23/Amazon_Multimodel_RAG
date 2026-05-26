@@ -323,12 +323,24 @@ def search_products(query_embedding, query_text, top_k):
         else:
             fallback_candidates.append((product_id, similarity + 0.02, metadata))
 
-    candidates = primary_candidates or fallback_candidates
+    candidates = []
+    seen = set()
+    for group in (primary_candidates, fallback_candidates):
+        group.sort(key=lambda result: result[1], reverse=True)
+        for product_id, similarity, metadata in group:
+            if product_id not in seen:
+                candidates.append((product_id, similarity, metadata))
+                seen.add(product_id)
 
     if not candidates:
         return vector_store.search(query_embedding, top_k=top_k)
 
-    candidates.sort(key=lambda result: result[1], reverse=True)
+    if len(candidates) < top_k:
+        for product_id, similarity, metadata in vector_store.search(query_embedding, top_k=top_k):
+            if product_id not in seen:
+                candidates.append((product_id, similarity, metadata))
+                seen.add(product_id)
+
     return candidates[:top_k]
 
 
@@ -339,7 +351,7 @@ def render_product_result(index, product_id, similarity, metadata, score_label="
     with col1:
         image_url = get_first_image_url(metadata)
         if image_url:
-            st.image(image_url, use_column_width=True)
+            st.image(image_url, use_container_width=True)
         else:
             st.caption("No image available")
 
@@ -612,7 +624,7 @@ def render_image_query_interface(temperature, top_k):
         col1, col2 = st.columns(2)
 
         with col1:
-            st.image(uploaded_image, caption="Uploaded image", use_column_width=True)
+            st.image(uploaded_image, caption="Uploaded image", use_container_width=True)
 
         with col2:
             st.info("✅ Image uploaded successfully!")
@@ -702,7 +714,7 @@ def render_combined_query_interface(temperature, top_k):
         )
 
         if uploaded_image is not None:
-            st.image(uploaded_image, caption="Reference image", use_column_width=True)
+            st.image(uploaded_image, caption="Reference image", use_container_width=True)
 
     text_weight = st.slider(
         "Weight text vs image (0=image only, 1=text only)",
