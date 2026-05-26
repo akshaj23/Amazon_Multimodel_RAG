@@ -150,13 +150,14 @@ What the evaluator does:
 
 - Randomly samples products from the dataset, with `50` samples by default.
 - Uses each sampled product title as a text query.
-- Optionally creates harder title-derived queries, such as shortened titles, brand/category queries, natural-language queries, and feature-only queries.
+- Optionally creates moderate title-derived queries, such as shortened titles and titles with the brand removed.
+- Keeps a separate hard-title stress test for broader brand/category, natural-language, and feature-only queries.
 - Uses each sampled product image as a photo query when an image URL or path is available.
 - Cross-checks retrieved product IDs against the sampled product's ASIN.
 - Computes average Recall@1, Recall@5, Recall@10, MRR, and NDCG.
 - Saves both aggregate metrics and per-query retrieval details for inspection.
 
-Run a random 50-product recall check for product title and image queries:
+Run a random 50-product recall check for title, moderate title-derived, and image queries:
 
 ```bash
 python evaluation/random_sample_recall.py \
@@ -178,6 +179,12 @@ python evaluation/random_sample_recall.py \
   --mode title
 
 # Harder title-derived recall test
+python evaluation/random_sample_recall.py \
+  --data data/processed/amazon_products_2020.json \
+  --sample-size 50 \
+  --mode moderate-title
+
+# Stress-test title-derived recall test
 python evaluation/random_sample_recall.py \
   --data data/processed/amazon_products_2020.json \
   --sample-size 50 \

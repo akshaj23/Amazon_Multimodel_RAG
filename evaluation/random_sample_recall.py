@@ -135,7 +135,7 @@ def sample_products(
 ) -> List[Dict]:
     """Filter products to evaluable rows and return a deterministic random sample."""
     eligible = []
-    requires_text = mode in {"title", "hard-title", "both", "all"}
+    requires_text = mode in {"title", "moderate-title", "hard-title", "both", "all"}
     requires_image = mode in {"photo", "both", "all"}
     for product in products:
         product_id = normalize_product_id(product)
@@ -224,6 +224,45 @@ def hard_title_queries(product: Dict) -> List[Tuple[str, str]]:
     return unique_candidates
 
 
+def moderate_title_queries(product: Dict) -> List[Tuple[str, str]]:
+    """
+    Generate realistic title-derived queries that are harder than exact titles
+    without becoming category-only or feature-only ambiguity tests.
+    """
+    title = str(product.get("title") or "").strip()
+    brand = str(product.get("brand") or "").strip()
+
+    candidates = []
+
+    short_title = compact_text(title, max_words=10)
+    if short_title and short_title.lower() != title.lower():
+        candidates.append(("moderate_short_title", short_title))
+
+    if brand:
+        title_without_brand = re.sub(
+            rf"\b{re.escape(brand)}\b",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        )
+        no_brand_query = compact_text(title_without_brand, max_words=10)
+        if no_brand_query:
+            candidates.append(("moderate_title_without_brand", no_brand_query))
+
+    seen = set()
+    unique_candidates = []
+    for query_type, query in candidates:
+        normalized = query.lower().strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique_candidates.append((query_type, query.strip()))
+
+    if not unique_candidates and title:
+        unique_candidates.append(("moderate_short_title", compact_text(title, max_words=10) or title))
+
+    return unique_candidates
+
+
 def evaluate_text_queries(
     sample: Sequence[Dict],
     vector_store,
@@ -306,6 +345,23 @@ def evaluate_hard_title_queries(
         k_values,
         query_builder=hard_title_queries,
         metrics_name="hard_title",
+    )
+
+
+def evaluate_moderate_title_queries(
+    sample: Sequence[Dict],
+    vector_store,
+    embedding_model: CLIPEmbeddingModel,
+    k_values: Sequence[int],
+) -> Tuple[Dict[str, float], List[Dict]]:
+    """Evaluate realistic title-derived text queries."""
+    return evaluate_text_queries(
+        sample,
+        vector_store,
+        embedding_model,
+        k_values,
+        query_builder=moderate_title_queries,
+        metrics_name="moderate_title",
     )
 
 
@@ -481,7 +537,17 @@ def run(args) -> Dict:
         query_metrics["title"] = title_metrics
         details.extend(title_details)
 
-    if args.mode in {"hard-title", "all"}:
+    if args.mode in {"moderate-title", "all"}:
+        moderate_title_metrics, moderate_title_details = evaluate_moderate_title_queries(
+            sample,
+            vector_store,
+            embedding_model,
+            args.k_values,
+        )
+        query_metrics["moderate_title"] = moderate_title_metrics
+        details.extend(moderate_title_details)
+
+    if args.mode in {"hard-title"}:
         hard_title_metrics, hard_title_details = evaluate_hard_title_queries(
             sample,
             vector_store,
@@ -542,7 +608,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling")
     parser.add_argument(
         "--mode",
-        choices=["title", "hard-title", "photo", "both", "all"],
+        choices=["title", "moderate-title", "hard-title", "photo", "both", "all"],
         default="both",
         help="Which query types to evaluate",
     )
