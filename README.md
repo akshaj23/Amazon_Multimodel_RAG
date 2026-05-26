@@ -141,6 +141,62 @@ Upload a product image. The app uses CLIP image embeddings to retrieve visually 
 
 Upload an image and add text. If the text is a question, the image is used for retrieval and the text is used as the Llama question. If the text describes a desired product, the app blends text and image embeddings.
 
+## Retrieval Metrics
+
+This project now includes a random-sample retrieval evaluation file at `evaluation/random_sample_recall.py`.
+It tests whether the retrieval index can find the correct product when the query comes from known product data.
+
+What the evaluator does:
+
+- Randomly samples products from the dataset, with `50` samples by default.
+- Uses each sampled product title as a text query.
+- Uses each sampled product image as a photo query when an image URL or path is available.
+- Cross-checks retrieved product IDs against the sampled product's ASIN.
+- Computes average Recall@1, Recall@5, Recall@10, MRR, and NDCG.
+- Saves both aggregate metrics and per-query retrieval details for inspection.
+
+Run a random 50-product recall check for product title and image queries:
+
+```bash
+python evaluation/random_sample_recall.py \
+  --data data/processed/amazon_products_2020.json \
+  --sample-size 50 \
+  --mode both
+```
+
+The script reports averaged Recall@1, Recall@5, Recall@10, MRR, and NDCG, then writes aggregate metrics to `evaluation/results/random_sample_recall_metrics.json` and per-query details to `evaluation/results/random_sample_recall_details.csv`.
+
+Useful variants:
+
+```bash
+# Title-only recall test
+python evaluation/random_sample_recall.py \
+  --data data/processed/amazon_products_2020.json \
+  --sample-size 50 \
+  --mode title
+
+# Photo-only recall test
+python evaluation/random_sample_recall.py \
+  --data data/processed/amazon_products_2020.json \
+  --sample-size 50 \
+  --mode photo
+
+# Use custom recall cutoffs
+python evaluation/random_sample_recall.py \
+  --data data/processed/amazon_products_2020.json \
+  --sample-size 50 \
+  --mode both \
+  --k-values 1,3,5,10
+```
+
+Before running the evaluator, build the vector store with the same dataset:
+
+```bash
+python build_embeddings.py \
+  --data data/processed/amazon_products_2020.json \
+  --store chroma
+```
+
 ## Configuration
 
 Important settings are in `config.py`:
