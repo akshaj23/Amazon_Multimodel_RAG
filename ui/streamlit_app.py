@@ -801,21 +801,7 @@ def render_combined_query_interface(temperature, top_k):
 
 def render_evaluation_metrics():
     """Render evaluation metrics section"""
-    with st.expander("📊 Evaluation Metrics"):
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric("Recall@1", "85%", "+5%")
-        with col2:
-            st.metric("Recall@5", "92%", "+3%")
-        with col3:
-            st.metric("Recall@10", "95%", "+2%")
-
-        st.markdown("---")
-
-        st.subheader("Retrieval Performance")
-        st.write("Average accuracy of retrieved products: 88%")
-        st.progress(0.88)
+    return
 
 
 def main():
@@ -839,8 +825,7 @@ def main():
 
     st.markdown("---")
 
-    # Evaluation section
-    render_evaluation_metrics()
+    # Evaluation metrics are reported separately after running a labeled eval set.
 
 
 if __name__ == "__main__":
